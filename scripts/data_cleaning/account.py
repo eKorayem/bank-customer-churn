@@ -41,7 +41,7 @@ plot_boxplot(df, "Age")
 
 
 # Dealing with missing values
-df['Balance'] = df['Balance'].fillna(df['Balance'].mean(), inplace=True)
+df['Balance'] = df['Balance'].fillna(df['Balance'].median())
 
 # Reomve 'Name' Column
 df = df.drop(['AccountId'], axis='columns')
