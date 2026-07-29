@@ -11,7 +11,9 @@ DATA_PATH = BASE_DIR / "data" / "raw" / FILE_NAME
 SHEET_NAME = "Location"
 df = pd.read_excel(DATA_PATH, sheet_name=SHEET_NAME)
 
-
+pth_acc = BASE_DIR / "data" / "processed" / "account.csv"
+pth_demo = BASE_DIR / "data" / "processed" / "demographic.csv"
+df = pd.read_csv(pth_demo)
 
 
 
