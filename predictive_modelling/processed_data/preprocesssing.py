@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import os
 import pyodbc
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, RobustScaler
 import joblib
 from sklearn.model_selection import train_test_split
 from dotenv import load_dotenv
