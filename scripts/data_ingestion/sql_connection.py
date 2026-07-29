@@ -31,6 +31,7 @@ conn = pyodbc.connect(
     "TrustServerCertificate=yes;"
 )
 cursor = conn.cursor()
+cursor.fast_executemany = True
 
 # ===========================================
 # Push Data: Demographic Table
