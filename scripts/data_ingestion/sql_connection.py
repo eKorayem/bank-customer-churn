@@ -1,104 +1,110 @@
-# Libraries and Pacages
-
+# Libraries and Packages
 from pathlib import Path
 import pandas as pd
 import pyodbc
+from dotenv import load_dotenv
+import os
 
+# Load environment variables FIRST
+load_dotenv()
+
+# ===========================================
+# Load Processed Data Files
+# ===========================================
 BASE_DIR = Path(__file__).resolve().parents[2]
-FILE_NAME = "demographic.csv"
-DATA_PATH =  BASE_DIR / "data" / "processed" / FILE_NAME
- 
-df = pd.read_csv(DATA_PATH)
+DATA_DIR =  BASE_DIR / "data" / "processed"
 
-# Create connetion
+# Load each dataset into its own specific DataFrame
+df_demographic = pd.read_csv(DATA_DIR / "demographic.csv")
+df_location = pd.read_csv(DATA_DIR / "location.csv")
+df_account = pd.read_csv(DATA_DIR / "account.csv")
 
+# ===========================================
+# Create Database Connection
+# ===========================================
 conn = pyodbc.connect(
-    "Driver={ODBC Driver 18 for SQL Server};" # Use 17 or 18 depending on your installed Linux driver
-    "Server=localhost,1433;"
-    "Database=BankChurn;"
-    "UID=sa;"
-    "PWD=SuperStrong!Project2026;"
+    "Driver={ODBC Driver 18 for SQL Server};"
+    f"Server={os.getenv('DB_SERVER')};"
+    f"Database={os.getenv('DB_NAME')};"
+    f"UID={os.getenv('DB_USER')};"
+    f"PWD={os.getenv('DB_PASSWORD')};"
     "TrustServerCertificate=yes;"
 )
-
 cursor = conn.cursor()
 
-# Push demographic to databse
+# ===========================================
+# Push Data: Demographic Table
+# ===========================================
+print("Starting Demographic data insertion...")
 cursor.execute("SET IDENTITY_INSERT demographic ON")
 conn.commit()
 
-query = """
+query_demographic = """
 INSERT INTO demographic (
-    CustomerId,
-    Gender,
-    Age,
-    Salary,
-    LocationId,
-    Churned
+    CustomerId, Gender, Age, Salary, LocationId, Churned
 )
 VALUES (?, ?, ?, ?, ?, ?)
 """
 
-for index, row in df.iterrows():
-    cursor.execute(
-        query,
-        int(row.CustomerId),
-        row.Gender,
-        int(row.Age),
-        float(row.Salary),
-        int(row.LocationId),
+# Convert DataFrame to a list of tuples for bulk insert
+data_demographic = [
+    (
+        int(row.CustomerId), 
+        row.Gender, 
+        int(row.Age), 
+        float(row.Salary), 
+        int(row.LocationId), 
         int(row.Churned)
     )
+    for index, row in df_demographic.iterrows()
+]
 
+cursor.executemany(query_demographic, data_demographic)
 conn.commit()
-print("Data Inserted Successfully")
+print("Demographic Data Inserted Successfully")
 
-
-
-# Push Location to databse
+# ===========================================
+# Push Data: Location Table
+# ===========================================
+print("Starting Location data insertion...")
 cursor.execute("SET IDENTITY_INSERT location ON")
 conn.commit()
 
-query = """
+query_location = """
 INSERT INTO location (
-    LocationId,
-    Geography
+    LocationId, Geography
 )
 VALUES (?, ?)
 """
 
-for index, row in df.iterrows():
-    cursor.execute(
-        query,
-        int(row.LocationId),
+data_location = [
+    (
+        int(row.LocationId), 
         row.Geography
     )
+    for index, row in df_location.iterrows()
+]
 
+cursor.executemany(query_location, data_location)
 conn.commit()
-print("Data Inserted Successfully")
+print("Location Data Inserted Successfully")
 
-
-
-
-# Push Account to databse
+# ===========================================
+# Push Data: Account Table
+# ===========================================
+print("Starting Account data insertion...")
 cursor.execute("SET IDENTITY_INSERT account ON")
 conn.commit()
 
-query = """
+query_account = """
 INSERT INTO account (
-    CustomerId,
-    Tenure,
-    Balance,
-    NumProducts,
-    HasCreditCard,
-    IsActive
+    CustomerId, Tenure, Balance, NumProducts, HasCreditCard, IsActive
 )
 VALUES (?, ?, ?, ?, ?, ?)
 """
 
-for index, row in df.iterrows():
-    cursor.execute(
-        query,
+data_account = [
+    (
         int(row.CustomerId),
         int(row.Tenure),
         float(row.Balance),
@@ -106,9 +112,14 @@ for index, row in df.iterrows():
         int(row.HasCreditCard),
         int(row.IsActive)
     )
+    for index, row in df_account.iterrows()
+]
 
+cursor.executemany(query_account, data_account)
 conn.commit()
-print("Data Inserted Successfully")
+print("Account Data Inserted Successfully")
 
-
-df["Gender"].value_counts()
+# Close the connection when finished
+cursor.close()
+conn.close()
+print("Database connection closed.")

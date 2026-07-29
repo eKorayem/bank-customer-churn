@@ -1,22 +1,22 @@
 import numpy as np
 import pandas as pd
+import os
 import pyodbc
 from sklearn.preprocessing import StandardScaler
 import joblib
 from sklearn.model_selection import train_test_split
-
+from dotenv import load_dotenv
 
 
 # Read From SQL Server Database
 conn = pyodbc.connect(
-    "Driver={ODBC Driver 18 for SQL Server};" # Use 17 or 18 depending on your installed Linux driver
-    "Server=localhost,1433;"
-    "Database=BankChurn;"
-    "UID=sa;"
-    "PWD=SuperStrong!Project2026;"
+    "Driver={ODBC Driver 18 for SQL Server};"
+    f"Server={os.getenv('DB_SERVER')};"
+    f"Database={os.getenv('DB_NAME')};"
+    f"UID={os.getenv('DB_USER')};"
+    f"PWD={os.getenv('DB_PASSWORD')};"
     "TrustServerCertificate=yes;"
 )
-
 cursor = conn.cursor()
 
 
@@ -47,45 +47,52 @@ df_train, df_test = train_test_split(
     shuffle=True,
     stratify=df["Churned"]
 )
-
 # ===========================================
-# Feature Engineering
+# Feature Engineering (Train)
 # ===========================================
-
 df_train["BalanceSalaryRatio"] = df_train.Balance / df_train.Salary
 df_train["TenureByAge"] = df_train.Tenure / df_train.Age
 
 # ===========================================
-# Scaling Numerical Features
+# Scaling Numerical Features (Train)
 # ===========================================
+num_cols = df_train.select_dtypes(include=['number']).columns.drop(['Churned'])
 
-num_cols = df_train.select_dtypes(include=['number']).columns
-scaler = StandardScaler()
+# Upgrade to RobustScaler for financial data
+scaler = RobustScaler() 
 df_train[num_cols] = scaler.fit_transform(df_train[num_cols])
 
 # ===========================================
-# Encoding Categorical Features
+# Encoding Categorical Features (Train)
 # ===========================================
-
 cat_cols = df_train.select_dtypes(include=['string', 'object', 'bool']).columns.drop(['Churned'])
 df_train = pd.get_dummies(df_train, columns=cat_cols, drop_first=True, dtype=int)
 
-# ===========================================
-# Preprocssing Pipeline in Testing
-# ===========================================
 
-def DfTestPipeline(df_test):
-    df_test['BalanceSalaryRatio'] = df_test.Balance/df_test.Salary
+# ===========================================
+# Preprocessing Pipeline for Testing 
+# (Self-contained function without global variables)
+# ===========================================
+def transform_test_data(df_test, fitted_scaler, numerical_columns, categorical_columns):
+    # 1. Feature Engineering
+    df_test['BalanceSalaryRatio'] = df_test.Balance / df_test.Salary
     df_test["TenureByAge"] = df_test.Tenure / df_test.Age
 
-    
-    df_test[num_cols] = scaler.transform(df_test[num_cols])
+    # 2. Scaling (using the ALREADY FITTED scaler passed into the function)
+    df_test[numerical_columns] = fitted_scaler.transform(df_test[numerical_columns])
 
-    df_test = pd.get_dummies(df_test, columns=cat_cols, drop_first=True, dtype=int)
+    # 3. Encoding
+    df_test = pd.get_dummies(df_test, columns=categorical_columns, drop_first=True, dtype=int)
 
     return df_test
 
-df_test = DfTestPipeline(df_test=df_test)
+# Call the function by explicitly passing the required objects
+df_test = transform_test_data(
+    df_test=df_test, 
+    fitted_scaler=scaler, 
+    numerical_columns=num_cols, 
+    categorical_columns=cat_cols
+)
 
 # ===========================================
 # Re-Order columns in Testing and Training 
