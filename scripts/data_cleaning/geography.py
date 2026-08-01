@@ -1,22 +1,24 @@
-# Import libraries
 from pathlib import Path
 import pandas as pd
-from functions import *
+from functions import missing_value_report
 
-# Load Data
+# Set Paths
 BASE_DIR = Path(__file__).resolve().parents[2]
-FILE_NAME = "raw_data.xlsx"
-DATA_PATH = BASE_DIR / "data" / "raw" / FILE_NAME
+RAW_DATA_PATH = BASE_DIR / "data" / "raw" / "raw_data.xlsx"
+OUTPUT_PATH = BASE_DIR / "data" / "processed" / "location.csv"
 
-SHEET_NAME = "Location"
-df = pd.read_excel(DATA_PATH, sheet_name=SHEET_NAME)
+def process_location_data():
+    # Load Data
+    df = pd.read_excel(RAW_DATA_PATH, sheet_name="Location")
+    
+    # Optional: Log missing values to standard output for pipeline monitoring
+    print("Missing Values Report (Location):")
+    print(missing_value_report(df))
+    
+    # Export file safely
+    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(OUTPUT_PATH, index=False)
+    print(f"Location data saved to {OUTPUT_PATH}")
 
-pth_acc = BASE_DIR / "data" / "processed" / "account.csv"
-pth_demo = BASE_DIR / "data" / "processed" / "demographic.csv"
-
-
-# Export file
-OUTPUT_DIR = BASE_DIR / "data" / "processed"
-file_name = "location.csv"
-file_path = OUTPUT_DIR / file_name
-df.to_csv(file_path ,index=False)
+if __name__ == "__main__":
+    process_location_data()
