@@ -1,126 +1,119 @@
-import numpy as np
-import pandas as pd
-import os
-import pyodbc
-from sklearn.preprocessing import StandardScaler, RobustScaler
-import joblib
-from sklearn.model_selection import train_test_split
-from dotenv import load_dotenv
-
-
-# Read From SQL Server Database
-conn = pyodbc.connect(
-    "Driver={ODBC Driver 18 for SQL Server};"
-    f"Server={os.getenv('DB_SERVER')};"
-    f"Database={os.getenv('DB_NAME')};"
-    f"UID={os.getenv('DB_USER')};"
-    f"PWD={os.getenv('DB_PASSWORD')};"
-    "TrustServerCertificate=yes;"
-)
-cursor = conn.cursor()
-cursor.fast_executemany = True
-
-
-query = """
-SELECT
-    d.Gender, d.Age, d.Salary, l.[Geography] ,
-    a.Tenure, a.Balance, a.NumProducts, a.HasCreditCard, a.IsActive,
-    d.Churned
-FROM demographic d
-JOIN account a
-    ON a.CustomerId = d.CustomerId
-JOIN [location] l
-    ON l.locationId = d.LocationId
 """
-
-df = pd.read_sql(query, conn)
-
-X = df.drop('Churned', axis=1)
-y = df['Churned']
-
-SEED = 200
-T_SIZE = 0.2
-
-df_train, df_test = train_test_split(
-    df,
-    test_size=T_SIZE,
-    random_state=SEED,
-    shuffle=True,
-    stratify=df["Churned"]
-)
-# ===========================================
-# Feature Engineering (Train)
-# ===========================================
-df_train["BalanceSalaryRatio"] = df_train.Balance / df_train.Salary
-df_train["TenureByAge"] = df_train.Tenure / df_train.Age
+Core Machine Learning Preprocessing Pipeline.
+Handles data extraction, feature engineering, and scalable transformations.
+"""
+import joblib
+import pandas as pd
+import numpy as np
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import RobustScaler, OneHotEncoder
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import train_test_split
+from scripts.db_utils import get_db_connection # Reusing our centralized connection utility
 
 # ===========================================
-# Scaling Numerical Features (Train)
+# Custom Feature Engineering Transformer
 # ===========================================
-num_cols = df_train.select_dtypes(include=['number']).columns.drop(['Churned'])
-
-# Upgrade to RobustScaler for financial data
-scaler = RobustScaler() 
-df_train[num_cols] = scaler.fit_transform(df_train[num_cols])
-
-# ===========================================
-# Encoding Categorical Features (Train)
-# ===========================================
-cat_cols = df_train.select_dtypes(include=['string', 'object', 'bool']).columns.drop(['Churned'])
-df_train = pd.get_dummies(df_train, columns=cat_cols, drop_first=True, dtype=int)
-
-
-# ===========================================
-# Preprocessing Pipeline for Testing 
-# (Self-contained function without global variables)
-# ===========================================
-def transform_test_data(df_test, fitted_scaler, numerical_columns, categorical_columns):
-    # 1. Feature Engineering
-    df_test['BalanceSalaryRatio'] = df_test.Balance / df_test.Salary
-    df_test["TenureByAge"] = df_test.Tenure / df_test.Age
-
-    # 2. Scaling (using the ALREADY FITTED scaler passed into the function)
-    df_test[numerical_columns] = fitted_scaler.transform(df_test[numerical_columns])
-
-    # 3. Encoding
-    df_test = pd.get_dummies(df_test, columns=categorical_columns, drop_first=True, dtype=int)
-
-    return df_test
-
-# Call the function by explicitly passing the required objects
-df_test = transform_test_data(
-    df_test=df_test, 
-    fitted_scaler=scaler, 
-    numerical_columns=num_cols, 
-    categorical_columns=cat_cols
-)
+class ChurnFeatureEngineer(BaseEstimator, TransformerMixin):
+    """
+    Scikit-Learn compatible transformer to generate custom financial ratios.
+    """
+    def fit(self, X, y=None):
+        return self
+    
+    def transform(self, X):
+        X_new = X.copy()
+        # Create financial behavioral indicators
+        X_new["BalanceSalaryRatio"] = X_new["Balance"] / X_new["Salary"].replace(0, np.nan)
+        X_new["TenureByAge"] = X_new["Tenure"] / X_new["Age"].replace(0, np.nan)
+        
+        # Fill any potential infinite values created by division by zero
+        X_new.fillna(0, inplace=True)
+        return X_new
 
 # ===========================================
-# Re-Order columns in Testing and Training 
+# Data Extraction
 # ===========================================
-
-df_train.columns.equals(df_test.columns)
-df_test = df_test[df_train.columns]
+def fetch_raw_data() -> pd.DataFrame:
+    """Extracts the joined analytical dataset from SQL Server."""
+    query = """
+    SELECT
+        d.Gender, d.Age, d.Salary, l.[Geography],
+        a.Tenure, a.Balance, a.NumProducts, a.HasCreditCard, a.IsActive,
+        d.Churned
+    FROM demographic d
+    JOIN account a ON a.CustomerId = d.CustomerId
+    JOIN [location] l ON l.locationId = d.LocationId
+    """
+    with get_db_connection() as conn:
+        df = pd.read_sql(query, conn)
+    return df
 
 # ===========================================
-# Declare Features and Target
+# Pipeline Execution
 # ===========================================
+def main():
+    print("Fetching raw data from database...")
+    df = fetch_raw_data()
 
-df_train_X = df_train.drop('Churned', axis='columns')
-df_train_y = df_train['Churned']
+    # Define feature spaces
+    X = df.drop('Churned', axis=1)
+    y = df['Churned']
 
-df_test_X = df_test.drop('Churned', axis='columns')
-df_test_y = df_test['Churned']
+    # Stratified split to maintain class distribution
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=200, shuffle=True, stratify=y
+    )
 
-# ===========================================
-# Save Data
-# ===========================================
+    # Identify column types automatically
+    num_cols = X_train.select_dtypes(include=['number']).columns.tolist()
+    cat_cols = X_train.select_dtypes(include=['string', 'object', 'bool']).columns.tolist()
+    
+    # We must add our engineered features to the numerical scaling list
+    num_cols.extend(["BalanceSalaryRatio", "TenureByAge"])
 
-artifacts = {
-    "X_train": df_train_X,
-    "y_train": df_train_y,
-    "X_test": df_test_X,
-    "y_test": df_test_y
-}
+    # Build the preprocessor column transformer
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ('num', RobustScaler(), num_cols),
+            ('cat', OneHotEncoder(drop='first', sparse_output=False, dtype=int), cat_cols)
+        ],
+        remainder='passthrough'
+    )
 
-joblib.dump(artifacts, 'dataset_bundle.pkl')
+    # Assemble the final execution pipeline
+    full_pipeline = Pipeline(steps=[
+        ('feature_engineering', ChurnFeatureEngineer()),
+        ('preprocessing', preprocessor)
+    ])
+
+    print("Fitting transformations and processing data...")
+    # Fit strictly on training data to prevent data leakage, then transform
+    X_train_processed = full_pipeline.fit_transform(X_train)
+    
+    # Transform test data using the parameters learned from training data
+    X_test_processed = full_pipeline.transform(X_test)
+
+    # Retrieve output feature names to maintain Pandas DataFrame structure
+    feature_names = num_cols + full_pipeline.named_steps['preprocessing']\
+                        .named_transformers_['cat'].get_feature_names_out(cat_cols).tolist()
+
+    df_train_X = pd.DataFrame(X_train_processed, columns=feature_names, index=X_train.index)
+    df_test_X = pd.DataFrame(X_test_processed, columns=feature_names, index=X_test.index)
+
+    # Package artifacts for modeling
+    artifacts = {
+        "X_train": df_train_X,
+        "y_train": y_train,
+        "X_test": df_test_X,
+        "y_test": y_test,
+        "pipeline": full_pipeline # Saving the pipeline itself is critical for future API deployment
+    }
+
+    output_path = 'dataset_bundle.pkl'
+    joblib.dump(artifacts, output_path)
+    print(f"✅ Pipeline executed successfully. Artifacts saved to {output_path}")
+
+if __name__ == "__main__":
+    main()
