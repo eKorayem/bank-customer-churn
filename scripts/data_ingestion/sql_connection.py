@@ -1,126 +1,72 @@
-# Libraries and Packages
+"""
+Ingests processed CSV data into the SQL Server database securely and efficiently.
+"""
 from pathlib import Path
 import pandas as pd
-import pyodbc
-from dotenv import load_dotenv
-import os
-
-# Load environment variables FIRST
-load_dotenv()
+from scripts.db_utils import get_db_connection # Using our new centralized utility
 
 # ===========================================
-# Load Processed Data Files
+# Setup & Load Data
 # ===========================================
 BASE_DIR = Path(__file__).resolve().parents[2]
-DATA_DIR =  BASE_DIR / "data" / "processed"
+DATA_DIR = BASE_DIR / "data" / "processed"
 
-# Load each dataset into its own specific DataFrame
-df_demographic = pd.read_csv(DATA_DIR / "demographic.csv")
-df_location = pd.read_csv(DATA_DIR / "location.csv")
-df_account = pd.read_csv(DATA_DIR / "account.csv")
-
-# ===========================================
-# Create Database Connection
-# ===========================================
-conn = pyodbc.connect(
-    "Driver={ODBC Driver 18 for SQL Server};"
-    f"Server={os.getenv('DB_SERVER')};"
-    f"Database={os.getenv('DB_NAME')};"
-    f"UID={os.getenv('DB_USER')};"
-    f"PWD={os.getenv('DB_PASSWORD')};"
-    "TrustServerCertificate=yes;"
-)
-cursor = conn.cursor()
-cursor.fast_executemany = True
+# Load datasets
+datasets = {
+    "demographic": pd.read_csv(DATA_DIR / "demographic.csv"),
+    "location": pd.read_csv(DATA_DIR / "location.csv"),
+    "account": pd.read_csv(DATA_DIR / "account.csv")
+}
 
 # ===========================================
-# Push Data: Demographic Table
+# Database Ingestion Operations
 # ===========================================
-print("Starting Demographic data insertion...")
-cursor.execute("SET IDENTITY_INSERT demographic ON")
-conn.commit()
+def bulk_insert_table(cursor, table_name: str, df: pd.DataFrame, query: str):
+    """
+    Handles identity insertion and bulk executes data into a specified table.
+    """
+    print(f"Starting {table_name} data insertion...")
+    cursor.execute(f"SET IDENTITY_INSERT {table_name} ON")
+    
+    # itertuples() is exponentially faster than iterrows() for tuple generation
+    # Ensure dataframe columns match the exact query insertion order before this step
+    data_tuples = list(df.itertuples(index=False, name=None))
+    
+    cursor.executemany(query, data_tuples)
+    print(f"{table_name.capitalize()} Data Inserted Successfully")
 
-query_demographic = """
-INSERT INTO demographic (
-    CustomerId, Gender, Age, Salary, LocationId, Churned
-)
-VALUES (?, ?, ?, ?, ?, ?)
-"""
+def main():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.fast_executemany = True # Excellent inclusion for ODBC optimization
 
-# Convert DataFrame to a list of tuples for bulk insert
-data_demographic = [
-    (
-        int(row.CustomerId), 
-        row.Gender, 
-        int(row.Age), 
-        float(row.Salary), 
-        int(row.LocationId), 
-        int(row.Churned)
-    )
-    for index, row in df_demographic.iterrows()
-]
+    try:
+        # 1. Demographic Insertion
+        q_demo = """INSERT INTO demographic (CustomerId, Gender, Age, Salary, LocationId, Churned) VALUES (?, ?, ?, ?, ?, ?)"""
+        # Ensure exact column order matches query
+        df_demo = datasets["demographic"][['CustomerId', 'Gender', 'Age', 'Salary', 'LocationId', 'Churned']]
+        bulk_insert_table(cursor, "demographic", df_demo, q_demo)
 
-cursor.executemany(query_demographic, data_demographic)
-conn.commit()
-print("Demographic Data Inserted Successfully")
+        # 2. Location Insertion
+        q_loc = """INSERT INTO location (LocationId, Geography) VALUES (?, ?)"""
+        df_loc = datasets["location"][['LocationId', 'Geography']]
+        bulk_insert_table(cursor, "location", df_loc, q_loc)
 
-# ===========================================
-# Push Data: Location Table
-# ===========================================
-print("Starting Location data insertion...")
-cursor.execute("SET IDENTITY_INSERT location ON")
-conn.commit()
+        # 3. Account Insertion
+        q_acc = """INSERT INTO account (CustomerId, Tenure, Balance, NumProducts, HasCreditCard, IsActive) VALUES (?, ?, ?, ?, ?, ?)"""
+        df_acc = datasets["account"][['CustomerId', 'Tenure', 'Balance', 'NumProducts', 'HasCreditCard', 'IsActive']]
+        bulk_insert_table(cursor, "account", df_acc, q_acc)
 
-query_location = """
-INSERT INTO location (
-    LocationId, Geography
-)
-VALUES (?, ?)
-"""
+        # Commit all successful transactions
+        conn.commit()
+        
+    except Exception as e:
+        conn.rollback() # Rollback on failure to prevent partial commits
+        print(f"Database insertion failed: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+        print("Database connection closed.")
 
-data_location = [
-    (
-        int(row.LocationId), 
-        row.Geography
-    )
-    for index, row in df_location.iterrows()
-]
-
-cursor.executemany(query_location, data_location)
-conn.commit()
-print("Location Data Inserted Successfully")
-
-# ===========================================
-# Push Data: Account Table
-# ===========================================
-print("Starting Account data insertion...")
-cursor.execute("SET IDENTITY_INSERT account ON")
-conn.commit()
-
-query_account = """
-INSERT INTO account (
-    CustomerId, Tenure, Balance, NumProducts, HasCreditCard, IsActive
-)
-VALUES (?, ?, ?, ?, ?, ?)
-"""
-
-data_account = [
-    (
-        int(row.CustomerId),
-        int(row.Tenure),
-        float(row.Balance),
-        int(row.NumProducts),
-        int(row.HasCreditCard),
-        int(row.IsActive)
-    )
-    for index, row in df_account.iterrows()
-]
-
-cursor.executemany(query_account, data_account)
-conn.commit()
-print("Account Data Inserted Successfully")
-
-# Close the connection when finished
-cursor.close()
-conn.close()
-print("Database connection closed.")
+if __name__ == "__main__":
+    main()
