@@ -14,3 +14,8 @@ __pycache__/
 
 export_code_to_md.py
 project_code.md
+
+# IDE and Tooling Caches
+.vscode/
+.agesnts/
+.claud/
