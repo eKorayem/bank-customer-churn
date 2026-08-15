@@ -3,9 +3,9 @@ Unified Model Experimentation Pipeline.
 Executes GridSearchCV across multiple algorithms and ranks them by performance.
 """
 import warnings
+from pathlib import Path
 import joblib
 import pandas as pd
-from pathlib import Path
 
 # Scikit-Learn Models
 from sklearn.model_selection import GridSearchCV
@@ -19,17 +19,19 @@ from evaluation_script import evaluate_model
 from preprocessing import ChurnFeatureEngineer
 
 # ===========================================
-# Secure File Pathing (Updated for new folder structure)
+# Secure File Pathing
 # ===========================================
 BASE_DIR = Path(__file__).resolve().parents[1]
-
 DATA_PATH = BASE_DIR / "data" / "processed" / "dataset_bundle.pkl"
+MODEL_SAVE_PATH = BASE_DIR / "data" / "processed" / "champion_model.pkl"
+
 
 def load_data():
     """Loads the serialized preprocessed datasets."""
     print("Loading processed dataset...")
     data = joblib.load(DATA_PATH)
     return data['X_train'], data['X_test'], data['y_train'], data['y_test']
+
 
 def run_all_experiments():
     X_train, X_test, y_train, y_test = load_data()
@@ -50,13 +52,14 @@ def run_all_experiments():
             }
         },
         "Random Forest": {
-            "model": RandomForestClassifier(class_weight="balanced"),
+            "model": RandomForestClassifier(class_weight="balanced", random_state=42),
             "params": {
                 'max_depth': [3, 5, 6, 7, 8], 
                 'n_estimators': [50, 100],
                 'min_samples_split': [3, 5, 6, 7]
             }
         },
+        # SVM models commented out due to computational complexity on CPU
         # "SVM (Polynomial)": {
         #     "model": SVC(class_weight="balanced", probability=True, kernel='poly'),
         #     "params": {
@@ -84,6 +87,7 @@ def run_all_experiments():
     }
 
     results = []
+    trained_best_models = {}
 
     # ===========================================
     # Unified Training Loop
@@ -106,6 +110,7 @@ def run_all_experiments():
             
             grid.fit(X_train, y_train)
             best_model = grid.best_estimator_
+            trained_best_models[name] = best_model
             
             metrics = evaluate_model(best_model, X_test, y_test)
             metrics["Model"] = name
@@ -114,23 +119,24 @@ def run_all_experiments():
             print(f"Finished {name} | F1 Score: {metrics['F1_Churn']:.4f}\n")
 
     # ===========================================
-    # Performance Leaderboard
+    # Performance Leaderboard & Model Export
     # ===========================================
     results_df = pd.DataFrame(results).set_index("Model")
     
     print("-" * 50)
     print("FINAL MODEL LEADERBOARD (Ranked by F1 Score)")
-
-    # Save the Random Forest model for the Streamlit App
-    rf_best_model = experiments["Random Forest"]["model"]
-    # We have to re-fit it quickly on the full training data just to be safe
-    rf_best_model.fit(X_train, y_train)
-    joblib.dump(rf_best_model, 'data/processed/champion_model.pkl')
-    print("Champion Random Forest model saved to data/processed/champion_model.pkl")
     print("-" * 50)
     
-    leaderboard = results_df[["F1_Churn", "ROC_AUC", "Recall_Churn", "Precision_Churn"]].sort_values(by="F1_Churn", ascending=False)
+    leaderboard = results_df[["F1_Churn", "ROC_AUC", "Recall_Churn", "Precision_Churn"]].sort_values(
+        by="F1_Churn", ascending=False
+    )
     print(leaderboard)
+
+    # Save the tuned Random Forest model (or dynamically select the top-performing model)
+    champion_model = trained_best_models["Random Forest"]
+    joblib.dump(champion_model, MODEL_SAVE_PATH)
+    print(f"\nTuned Champion Random Forest model saved to: {MODEL_SAVE_PATH}")
+
 
 if __name__ == "__main__":
     run_all_experiments()
