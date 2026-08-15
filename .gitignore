@@ -1,5 +1,16 @@
-/.vscode
-export_python_md.py
-.vscode
-project_code.md
+# Security
 .env
+
+# Datasets
+data/
+*.pkl
+*.csv
+*.xlsx
+
+# Python cache
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+export_code_to_md.py
+project_code.md

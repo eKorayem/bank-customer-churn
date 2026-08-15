@@ -120,6 +120,13 @@ def run_all_experiments():
     
     print("-" * 50)
     print("FINAL MODEL LEADERBOARD (Ranked by F1 Score)")
+
+    # Save the Random Forest model for the Streamlit App
+    rf_best_model = experiments["Random Forest"]["model"]
+    # We have to re-fit it quickly on the full training data just to be safe
+    rf_best_model.fit(X_train, y_train)
+    joblib.dump(rf_best_model, 'data/processed/champion_model.pkl')
+    print("Champion Random Forest model saved to data/processed/champion_model.pkl")
     print("-" * 50)
     
     leaderboard = results_df[["F1_Churn", "ROC_AUC", "Recall_Churn", "Precision_Churn"]].sort_values(by="F1_Churn", ascending=False)
