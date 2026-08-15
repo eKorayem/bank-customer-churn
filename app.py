@@ -38,8 +38,7 @@ pipeline, model = load_assets()
 st.sidebar.header("Customer Details")
 
 def user_input_features():
-    credit_score = st.sidebar.slider("Credit Score", 300, 850, 600)
-    geography = st.sidebar.selectbox("Country", ["France", "Germany", "Spain"])
+    geography = st.sidebar.selectbox("Country", ["France", "Germany", "Spain", "UK", "Canada", "USA"])
     gender = st.sidebar.selectbox("Gender", ["Male", "Female"])
     age = st.sidebar.slider("Age", 18, 100, 40)
     tenure = st.sidebar.slider("Tenure (Years)", 0, 10, 5)
@@ -51,7 +50,6 @@ def user_input_features():
 
     # Format into a Pandas DataFrame exactly like your original raw data
     data = {
-        'CreditScore': credit_score,
         'Geography': geography,
         'Gender': gender,
         'Age': age,
