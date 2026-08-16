@@ -8,6 +8,7 @@ import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import RobustScaler, OneHotEncoder
+from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import train_test_split
 from db_utils import get_db_connection
@@ -76,10 +77,16 @@ def main():
     # We must explicitly add our newly engineered features to the numerical scaling list
     num_cols.extend(["BalanceSalaryRatio", "TenureByAge", "IsHighRiskAge"])
 
+    # Create a dedicated pipeline for numerical features to handle imputation and scaling
+    num_pipeline = Pipeline(steps=[
+        ('imputer', SimpleImputer(strategy='median')),
+        ('scaler', RobustScaler())
+    ])
+
     # Build the preprocessor column transformer
     preprocessor = ColumnTransformer(
         transformers=[
-            ('num', RobustScaler(), num_cols),
+            ('num', num_pipeline, num_cols),
             ('cat', OneHotEncoder(drop='first', sparse_output=False, dtype=int), cat_cols)
         ],
         remainder='passthrough'

@@ -3,12 +3,18 @@ Ingests processed CSV data into the SQL Server database securely and efficiently
 """
 from pathlib import Path
 import pandas as pd
-from scripts.db_utils import get_db_connection # Using our new centralized utility
+import sys
 
 # ===========================================
 # Setup & Load Data
 # ===========================================
+
 BASE_DIR = Path(__file__).resolve().parents[2]
+
+sys.path.append(str(BASE_DIR))
+
+from scripts.db_utils import get_db_connection
+
 DATA_DIR = BASE_DIR / "data" / "processed"
 
 # Load datasets
@@ -26,13 +32,22 @@ def bulk_insert_table(cursor, table_name: str, df: pd.DataFrame, query: str):
     Handles identity insertion and bulk executes data into a specified table.
     """
     print(f"Starting {table_name} data insertion...")
+    
+    # 1. Turn ON for the specific table
     cursor.execute(f"SET IDENTITY_INSERT {table_name} ON")
     
-    # itertuples() is exponentially faster than iterrows() for tuple generation
-    # Ensure dataframe columns match the exact query insertion order before this step
-    data_tuples = list(df.itertuples(index=False, name=None))
+    # FIX: Convert Pandas NaN to Python None so SQL Server receives proper NULLs
+    df_clean = df.astype(object).where(pd.notna(df), None)
     
+    # itertuples() is exponentially faster than iterrows() for tuple generation
+    data_tuples = list(df_clean.itertuples(index=False, name=None))
+    
+    # 2. Insert the data
     cursor.executemany(query, data_tuples)
+    
+    # 3. Turn OFF immediately so the next table can use it
+    cursor.execute(f"SET IDENTITY_INSERT {table_name} OFF")
+    
     print(f"{table_name.capitalize()} Data Inserted Successfully")
 
 def main():
@@ -67,6 +82,7 @@ def main():
         cursor.close()
         conn.close()
         print("Database connection closed.")
+
 
 if __name__ == "__main__":
     main()
