@@ -132,11 +132,13 @@ def run_all_experiments():
     )
     print(leaderboard)
 
-    # Save the tuned Random Forest model (or dynamically select the top-performing model)
-    champion_model = trained_best_models["Random Forest"]
+    # DYNAMIC SELECTION: Automatically grab the name of the #1 ranked model
+    top_model_name = leaderboard.index[0]
+    champion_model = trained_best_models[top_model_name]
+    
+    # Save the true champion
     joblib.dump(champion_model, MODEL_SAVE_PATH)
-    print(f"\nTuned Champion Random Forest model saved to: {MODEL_SAVE_PATH}")
-
+    print(f"\nTuned Champion {top_model_name} model saved to: {MODEL_SAVE_PATH}")
 
 if __name__ == "__main__":
     run_all_experiments()
