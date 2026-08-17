@@ -29,7 +29,7 @@ feature_importances = model.feature_importances_
 features = X_train.columns 
 
 plt.figure(figsize=(10, 6))
-sns.barplot(x=feature_importances, y=features, palette="viridis")
+sns.barplot(x=feature_importances, y=features, hue=features, legend=False, palette="viridis")
 plt.title("Random Forest Feature Importance")
 plt.xlabel("Importance Score")
 plt.ylabel("Features")
