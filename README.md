@@ -1,5 +1,7 @@
 # Bank Customer Churn Prediction & MLOps Pipeline
 
+**[Live Demo: Bank Customer Churn Dashboard](https://bank-customer-churn-pu8ewpccplj2rpsmgebdly.streamlit.app/)**
+
 An end-to-end machine learning and data engineering project designed to predict customer churn for financial institutions. This repository showcases production-grade practices, including secure SQL database ingestion, rigorous statistical validation, modular scikit-learn preprocessing pipelines, and automated model evaluation.
 
 ---
