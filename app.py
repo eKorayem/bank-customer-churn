@@ -3,32 +3,28 @@ import sys
 import os
 import pandas as pd
 import joblib
+import plotly.graph_objects as go
 
 # Import your custom class so joblib can rebuild the pipeline
-# from scripts.preprocessing import ChurnFeatureEngineer
 import __main__
 
 # Add the 'scripts' folder to Python's internal path
 sys.path.append(os.path.abspath("scripts"))
 from preprocessing import ChurnFeatureEngineer
 
-# The Fix: Manually inject the class into the "main" environment
+# Manually inject the class into the "main" environment
 __main__.ChurnFeatureEngineer = ChurnFeatureEngineer
 
-from db_utils import get_db_connection
-
-# 1. Page Configuration
-st.set_page_config(page_title="Bank Churn Predictor", page_icon="🏦", layout="centered")
-st.title("Customer Churn Prediction App")
-st.write("Enter the customer's details below to predict their likelihood of leaving the bank.")
+# 1. Page Configuration (Set to wide layout for dashboards)
+st.set_page_config(page_title="Bank Churn Predictor", page_icon="🏦", layout="wide")
+st.title("Customer Churn Prediction Dashboard")
+st.markdown("Enter the customer's details in the sidebar to dynamically calculate their churn risk.")
 
 # 2. Load the Pipeline and Model
 @st.cache_resource
 def load_assets():
-    # Load the preprocessing pipeline (which contains the robust scaler and one-hot encoder)
     data = joblib.load('data/processed/dataset_bundle.pkl')
     pipeline = data['pipeline']
-    # Load the trained Random Forest model
     model = joblib.load('data/processed/champion_model.pkl')
     return pipeline, model
 
@@ -48,7 +44,6 @@ def user_input_features():
     is_active_member = st.sidebar.selectbox("Is Active Member?", [1, 0])
     estimated_salary = st.sidebar.number_input("Estimated Salary ($)", 0.0, 200000.0, 60000.0)
 
-    # Format into a Pandas DataFrame exactly like your original raw data
     data = {
         'Geography': geography,
         'Gender': gender,
@@ -64,22 +59,57 @@ def user_input_features():
 
 input_df = user_input_features()
 
-# Display the user's input on the main page
-st.subheader("Customer Profile")
-st.dataframe(input_df)
+# 4. Interactive Gauge Chart Function
+def create_gauge_chart(probability):
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=probability,
+        domain={'x': [0, 1], 'y': [0, 1]},
+        title={'text': "Churn Probability Risk", 'font': {'size': 20}},
+        number={'suffix': "%", 'font': {'size': 40}},
+        gauge={
+            'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
+            'bar': {'color': "black"},
+            'bgcolor': "white",
+            'borderwidth': 2,
+            'bordercolor': "gray",
+            'steps': [
+                {'range': [0, 30], 'color': "#00cc96"},    # Safe / Green
+                {'range': [30, 70], 'color': "#ffa15a"},   # Warning / Orange
+                {'range': [70, 100], 'color': "#ef553b"}   # Danger / Red
+            ],
+            'threshold': {
+                'line': {'color': "black", 'width': 4},
+                'thickness': 0.75,
+                'value': probability
+            }
+        }
+    ))
+    fig.update_layout(height=350, margin=dict(l=20, r=20, t=50, b=20))
+    return fig
 
-# 4. Prediction Logic
-if st.button("Predict Churn"):
-    # Pass the raw data through the pipeline (adds BalanceSalaryRatio, scales, encodes)
-    processed_data = pipeline.transform(input_df)
+# 5. UI Layout (Two Columns)
+col1, col2 = st.columns([1, 1.5])
+
+with col1:
+    st.subheader("Current Customer Profile")
+    st.dataframe(input_df.T.rename(columns={0: "Value"}), use_container_width=True)
+
+with col2:
+    st.subheader("Real-Time Prediction")
     
-    # Get the prediction and the probability percentage
+    # Process data and predict
+    processed_data = pipeline.transform(input_df)
     prediction = model.predict(processed_data)
     probability = model.predict_proba(processed_data)[0][1] * 100
 
-    st.subheader("Prediction Results")
+    # Render Plotly Gauge
+    st.plotly_chart(create_gauge_chart(probability), use_container_width=True)
+    
+    # Render Text Alerts
     if prediction[0] == 1:
-        st.error(f"**High Risk of Churn!** (Probability: {probability:.1f}%)")
-        st.write("Recommendation: Route this customer to the retention team immediately.")
+        st.error(f"**Action Required:** Customer has a high risk of churning.")
+        st.info("Recommendation: Route this customer to the retention team to discuss loyalty incentives.")
     else:
-        st.success(f"**Customer is Likely to Stay** (Churn Probability: {probability:.1f}%)")
+        st.success(f"**Stable:** Customer is likely to stay.")
+        st.info("Recommendation: Maintain standard communication. No immediate retention action required.")
